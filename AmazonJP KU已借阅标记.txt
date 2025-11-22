@@ -1,0 +1,166 @@
+// ==UserScript==
+// @name         AmazonJP KU已借阅标记
+// @namespace    http://tampermonkey.net/
+// @version      1.3
+// @description  Amazon.co.jp Kindle搜索结果标记已借阅图书（自动抓取+手动导入+数据导出备份）
+// @author       Gemini & You
+// @match        https://www.amazon.co.jp/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=amazon.co.jp
+// @grant        GM_registerMenuCommand
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_addStyle
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // --- 配置项 ---
+    const STORAGE_KEY = 'ku_borrowed_asins';
+
+    // --- 样式注入 ---
+    GM_addStyle(`
+        .ku-borrowed-mark {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 24px;
+            height: 24px;
+            background-color: #2ecc71;
+            border-radius: 50%;
+            z-index: 100;
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            margin-top: 2px;
+            margin-left: 2px;
+        }
+        .ku-borrowed-mark::after {
+            content: '';
+            display: block;
+            width: 6px;
+            height: 10px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+            margin-bottom: 1px;
+        }
+        .s-product-image-container, .s-image-fixed-height {
+            position: relative !important;
+        }
+    `);
+
+    // --- 核心数据管理 ---
+
+    function getBorrowedASINs() {
+        const stored = GM_getValue(STORAGE_KEY, []);
+        return new Set(stored);
+    }
+
+    function addASIN(asin) {
+        if (!asin) return;
+        const currentSet = getBorrowedASINs();
+        if (!currentSet.has(asin)) {
+            currentSet.add(asin);
+            GM_setValue(STORAGE_KEY, Array.from(currentSet));
+            console.log(`[KU Marker] 成功记录已借阅 ASIN: ${asin}`);
+        }
+    }
+
+    // --- 菜单功能：导入 ---
+    function importASINs() {
+        const input = prompt("【导入】\n请粘贴ASIN列表 (用逗号、空格或换行分隔):");
+        if (input) {
+            const asins = input.split(/[\s,]+/).filter(s => s.trim().length > 0);
+            const currentSet = getBorrowedASINs();
+            let count = 0;
+            asins.forEach(asin => {
+                const cleanAsin = asin.trim();
+                if (cleanAsin && !currentSet.has(cleanAsin)) {
+                    currentSet.add(cleanAsin);
+                    count++;
+                }
+            });
+            GM_setValue(STORAGE_KEY, Array.from(currentSet));
+            alert(`成功导入 ${count} 个新 ASIN。请刷新页面查看效果。`);
+        }
+    }
+
+    // --- 菜单功能：导出 (新增) ---
+    function exportASINs() {
+        const currentSet = getBorrowedASINs();
+        if (currentSet.size === 0) {
+            alert("当前还没有记录任何 ASIN，无需导出。");
+            return;
+        }
+        const listStr = Array.from(currentSet).join(',');
+        // 使用 prompt 显示，方便用户全选复制 (Ctrl+A, Ctrl+C)
+        prompt("【导出/备份】\n请复制下方所有内容，并在新电脑上通过“导入”功能粘贴：", listStr);
+    }
+
+    // --- 注册菜单 ---
+    GM_registerMenuCommand("➕ 批量导入 ASIN", importASINs);
+    GM_registerMenuCommand("📤 导出/备份已记录 ASIN", exportASINs);
+    GM_registerMenuCommand("📊 查看已存储数量", () => {
+        alert(`当前已记录 ${getBorrowedASINs().size} 本借阅图书。`);
+    });
+
+    // --- 页面逻辑：详情页抓取 ---
+
+    function checkDetailPage() {
+        const asinInput = document.getElementById('ASIN') || document.querySelector('input[name="ASIN"]');
+        const currentASIN = asinInput ? asinInput.value : null;
+        if (!currentASIN) return;
+        const bodyText = document.body.innerText;
+        const isBorrowed = bodyText.includes("通过 Kindle Unlimited 包月服务借阅") ||
+                           bodyText.includes("利用を終了") ||
+                           bodyText.includes("お客様は、この商品をすでにKindle Unlimitedで利用しています");
+
+        if (isBorrowed) {
+            addASIN(currentASIN);
+        }
+    }
+
+    // --- 页面逻辑：搜索列表渲染 ---
+
+    function markSearchResults() {
+        const borrowedSet = getBorrowedASINs();
+        if (borrowedSet.size === 0) return;
+
+        const items = document.querySelectorAll('[data-asin]');
+
+        items.forEach(item => {
+            const asin = item.getAttribute('data-asin');
+            if (borrowedSet.has(asin)) {
+                let targetContainer = item.querySelector('.s-product-image-container');
+                if (!targetContainer) {
+                    targetContainer = item.querySelector('.s-image-fixed-height');
+                }
+
+                if (targetContainer) {
+                    if (targetContainer.querySelector('.ku-borrowed-mark')) return;
+                    const mark = document.createElement('div');
+                    mark.className = 'ku-borrowed-mark';
+                    mark.title = '已借阅 (脚本记录)';
+                    targetContainer.appendChild(mark);
+                }
+            }
+        });
+    }
+
+    // --- 初始化与执行 ---
+
+    if (document.querySelector('#dp') || window.location.href.includes('/dp/')) {
+        setTimeout(checkDetailPage, 1500);
+    }
+
+    const observer = new MutationObserver((mutations) => {
+        markSearchResults();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    markSearchResults();
+
+})();
