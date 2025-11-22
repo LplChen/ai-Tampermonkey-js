@@ -1,0 +1,198 @@
+// ==UserScript==
+// @name         AmazonJP KU标记已借阅
+// @namespace    http://tampermonkey.net/
+// @version      1.4
+// @description  Amazon.co.jp Kindle搜索结果标记已借阅图书（支持中文/日文界面，详情页+借阅成功页自动抓取，含导出备份功能）
+// @author       Gemini & You
+// @match        https://www.amazon.co.jp/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=amazon.co.jp
+// @grant        GM_registerMenuCommand
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_addStyle
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // --- 配置项 ---
+    const STORAGE_KEY = 'ku_borrowed_asins';
+
+    // --- 样式注入 ---
+    GM_addStyle(`
+        .ku-borrowed-mark {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 24px;
+            height: 24px;
+            background-color: #2ecc71;
+            border-radius: 50%;
+            z-index: 100;
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            margin-top: 2px;
+            margin-left: 2px;
+        }
+        .ku-borrowed-mark::after {
+            content: '';
+            display: block;
+            width: 6px;
+            height: 10px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+            margin-bottom: 1px;
+        }
+        .s-product-image-container, .s-image-fixed-height {
+            position: relative !important;
+        }
+    `);
+
+    // --- 核心数据管理 ---
+
+    function getBorrowedASINs() {
+        const stored = GM_getValue(STORAGE_KEY, []);
+        return new Set(stored);
+    }
+
+    function addASIN(asin) {
+        if (!asin) return;
+        const currentSet = getBorrowedASINs();
+        if (!currentSet.has(asin)) {
+            currentSet.add(asin);
+            GM_setValue(STORAGE_KEY, Array.from(currentSet));
+            console.log(`[KU Marker] 成功记录已借阅 ASIN: ${asin}`);
+        }
+    }
+
+    // --- 菜单功能 ---
+    function importASINs() {
+        const input = prompt("【导入】\n请粘贴ASIN列表 (用逗号、空格或换行分隔):");
+        if (input) {
+            const asins = input.split(/[\s,]+/).filter(s => s.trim().length > 0);
+            const currentSet = getBorrowedASINs();
+            let count = 0;
+            asins.forEach(asin => {
+                const cleanAsin = asin.trim();
+                if (cleanAsin && !currentSet.has(cleanAsin)) {
+                    currentSet.add(cleanAsin);
+                    count++;
+                }
+            });
+            GM_setValue(STORAGE_KEY, Array.from(currentSet));
+            alert(`成功导入 ${count} 个新 ASIN。请刷新页面查看效果。`);
+        }
+    }
+
+    function exportASINs() {
+        const currentSet = getBorrowedASINs();
+        if (currentSet.size === 0) {
+            alert("当前还没有记录任何 ASIN，无需导出。");
+            return;
+        }
+        const listStr = Array.from(currentSet).join(',');
+        prompt("【导出/备份】\n请复制下方所有内容，并在新电脑上通过“导入”功能粘贴：", listStr);
+    }
+
+    GM_registerMenuCommand("➕ 批量导入 ASIN", importASINs);
+    GM_registerMenuCommand("📤 导出/备份已记录 ASIN", exportASINs);
+    GM_registerMenuCommand("📊 查看已存储数量", () => {
+        alert(`当前已记录 ${getBorrowedASINs().size} 本借阅图书。`);
+    });
+
+    // --- 页面逻辑：详情页抓取 ---
+
+    function checkDetailPage() {
+        // 排除掉 thankYouPage，避免逻辑冲突（虽然一般不会，但严谨一点）
+        if (window.location.href.includes('/thankYouPage')) return;
+
+        const asinInput = document.getElementById('ASIN') || document.querySelector('input[name="ASIN"]');
+        const currentASIN = asinInput ? asinInput.value : null;
+        if (!currentASIN) return;
+        const bodyText = document.body.innerText;
+        const isBorrowed = bodyText.includes("通过 Kindle Unlimited 包月服务借阅") ||
+                           bodyText.includes("利用を終了") ||
+                           bodyText.includes("お客様は、この商品をすでにKindle Unlimitedで利用しています");
+
+        if (isBorrowed) {
+            addASIN(currentASIN);
+        }
+    }
+
+    // --- 页面逻辑：借阅成功页抓取 (新增) ---
+    function checkThankYouPage() {
+        // 1. 检查 URL 是否包含 thankYouPage
+        if (!window.location.href.includes('/kindle-dbs/thankYouPage')) return;
+
+        // 2. 从 URL 参数中提取 ASIN
+        const urlParams = new URLSearchParams(window.location.search);
+        const asin = urlParams.get('asin');
+
+        if (asin) {
+            // 3. 二次确认页面内容（确保是借阅成功，而不是购买或其他）
+            // 只要页面包含 "已加入您的图书馆" 或者日语 "ライブラリに追加されました"，就视为成功
+            const bodyText = document.body.innerText;
+            const successKeywords = [
+                "已加入您的图书馆",
+                "ライブラリに追加されました",
+                "Kindle Unlimited", // 通常成功页也会提到 KU
+                "阅读器开始阅读"
+            ];
+
+            // 只要匹配任意一个关键词，就记录
+            if (successKeywords.some(keyword => bodyText.includes(keyword))) {
+                addASIN(asin);
+            }
+        }
+    }
+
+    // --- 页面逻辑：搜索列表渲染 ---
+
+    function markSearchResults() {
+        const borrowedSet = getBorrowedASINs();
+        if (borrowedSet.size === 0) return;
+
+        const items = document.querySelectorAll('[data-asin]');
+
+        items.forEach(item => {
+            const asin = item.getAttribute('data-asin');
+            if (borrowedSet.has(asin)) {
+                let targetContainer = item.querySelector('.s-product-image-container');
+                if (!targetContainer) {
+                    targetContainer = item.querySelector('.s-image-fixed-height');
+                }
+
+                if (targetContainer) {
+                    if (targetContainer.querySelector('.ku-borrowed-mark')) return;
+                    const mark = document.createElement('div');
+                    mark.className = 'ku-borrowed-mark';
+                    mark.title = '已借阅 (脚本记录)';
+                    targetContainer.appendChild(mark);
+                }
+            }
+        });
+    }
+
+    // --- 初始化与执行 ---
+
+    // 1. 详情页检测
+    if (document.querySelector('#dp') || window.location.href.includes('/dp/')) {
+        setTimeout(checkDetailPage, 1500);
+    }
+
+    // 2. 借阅成功页检测 (新增)
+    checkThankYouPage();
+
+    // 3. 搜索列表渲染 (监听滚动)
+    const observer = new MutationObserver((mutations) => {
+        markSearchResults();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    markSearchResults();
+
+})();
