@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         DS网页CoT撤回记录
+// @name         DS网页CoT记录
 // @namespace    http://tampermonkey.net/
 // @version      1.0
 // @description  使用高频 DOM 视觉克隆技术。精准匹配节点，渲染过就绝对跑不掉。
