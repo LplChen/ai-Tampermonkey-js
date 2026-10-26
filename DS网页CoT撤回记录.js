@@ -7,6 +7,8 @@
 // @match        https://chat.deepseek.com/*
 // @run-at       document-idle
 // @grant        none
+// @updateURL    https://raw.githubusercontent.com/LplChen/ai-Tampermonkey-js/refs/heads/main/DS%E7%BD%91%E9%A1%B5CoT%E6%92%A4%E5%9B%9E%E8%AE%B0%E5%BD%95.js
+// @downloadURL  https://raw.githubusercontent.com/LplChen/ai-Tampermonkey-js/refs/heads/main/DS%E7%BD%91%E9%A1%B5CoT%E6%92%A4%E5%9B%9E%E8%AE%B0%E5%BD%95.js
 // ==/UserScript==
 
 (function () {
