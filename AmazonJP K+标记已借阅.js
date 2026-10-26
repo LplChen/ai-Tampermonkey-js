@@ -10,6 +10,8 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
+// @updateURL    https://raw.githubusercontent.com/LplChen/ai-Tampermonkey-js/refs/heads/main/AmazonJP%20K%2B%E6%A0%87%E8%AE%B0%E5%B7%B2%E5%80%9F%E9%98%85.js
+// @downloadURL  https://raw.githubusercontent.com/LplChen/ai-Tampermonkey-js/refs/heads/main/AmazonJP%20K%2B%E6%A0%87%E8%AE%B0%E5%B7%B2%E5%80%9F%E9%98%85.js
 // ==/UserScript==
 
 (function() {
