@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         AmazonJP KU标记已借阅
+// @name         AmazonJP K+标记已借阅
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  Amazon.co.jp Kindle搜索结果标记已借阅图书（自动抓取+导出备份+直接选择文件导入）
-// @author       Gemini & You
+// @author       Gemini
 // @match        https://www.amazon.co.jp/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=amazon.co.jp
 // @grant        GM_registerMenuCommand
@@ -161,9 +161,10 @@
         const currentASIN = asinInput ? asinInput.value : null;
         if (!currentASIN) return;
         const bodyText = document.body.innerText;
-        const isBorrowed = bodyText.includes("通过 Kindle Unlimited 包月服务借阅") ||
+        const isBorrowed = bodyText.includes("通过 Kindle+借阅") ||
                            bodyText.includes("利用を終了") ||
-                           bodyText.includes("お客様は、この商品をすでにKindle Unlimitedで利用しています");
+                           bodyText.includes("管理 Kindle+图书") ||
+                           bodyText.includes("お客様は、この商品をすでにKindle+で利用しています");
 
         if (isBorrowed) {
             addASIN(currentASIN);
@@ -180,7 +181,7 @@
             const successKeywords = [
                 "已加入您的图书馆",
                 "ライブラリに追加されました",
-                "Kindle Unlimited",
+                "Kindle+",
                 "阅读器开始阅读"
             ];
             if (successKeywords.some(keyword => bodyText.includes(keyword))) {
